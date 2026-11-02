@@ -1,0 +1,15 @@
+expose:
+  type: clusterIP
+  tls:
+    enabled: false
+externalURL: http://localhost:8088
+trivy:
+  enabled: false
+persistence:
+  persistentVolumeClaim:
+    registry:
+      size: 2Gi
+    database:
+      size: 1Gi
+    redis:
+      size: 1Gi
