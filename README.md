@@ -32,11 +32,13 @@ Implemented and verified locally:
 - Vault secret retrieval with a scoped token and a denied-path check.
 - Kustomize rendering and GitOps script tests covering stale builds, merge commits and rollback.
 
+The [reference GitHub Actions workflow](https://github.com/JozefKovalcin/releaselab/actions/workflows/ci.yml) also passes application build, HTTP tests, Docker image packaging and artifact upload.
+
 Still to validate:
 
 - GitLab runner registration and the complete GitLab pipeline.
 - GitLab ID token authentication against Vault.
-- Container build, artifact transfer and registry publishing.
+- GitLab container build, artifact transfer and registry publishing.
 - Argo CD synchronization, self-healing and version changes on a running cluster.
 
 This is a local learning environment, not a production deployment. Vault runs in dev mode, the runner uses the host Docker socket, and application data is lost on restart.
