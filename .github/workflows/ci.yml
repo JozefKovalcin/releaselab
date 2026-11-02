@@ -1,0 +1,54 @@
+name: Reference CI
+on:
+  push:
+    paths: ['app/**', 'scripts/**', 'Dockerfile', '.dockerignore', '.github/workflows/ci.yml']
+  pull_request:
+    paths: ['app/**', 'scripts/**', 'Dockerfile', '.dockerignore', '.github/workflows/ci.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24', cache: npm, cache-dependency-path: app/package-lock.json }
+      - run: npm ci && npm run build
+        working-directory: app
+      - run: node scripts/validate.mjs
+      - uses: actions/upload-artifact@v4
+        with: { name: dist, path: app/dist/ }
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24' }
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: app/dist/ }
+      - run: npm ci
+        working-directory: app
+      - name: Test with ephemeral reference key
+        working-directory: app
+        shell: bash
+        run: |
+          export RELEASELAB_API_KEY="$(openssl rand -hex 32)"
+          echo "::add-mask::$RELEASELAB_API_KEY"
+          npm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: tests, path: app/reports/ }
+  build_image:
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: app/dist/ }
+      - run: |
+          version=$(node -p "require('./app/package.json').version")
+          docker build --build-arg APP_VERSION="$version" --build-arg COMMIT_SHA="$GITHUB_SHA" -t "releaselab:$GITHUB_SHA" .
+          docker save -o image.tar "releaselab:$GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        with: { name: image, path: image.tar, retention-days: 1 }

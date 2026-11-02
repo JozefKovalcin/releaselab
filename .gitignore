@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.test-dist/
+reports/
+image.tar
+.env
+.local/
+infra/runner/config.toml
+*.log

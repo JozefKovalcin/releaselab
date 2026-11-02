@@ -1,0 +1,31 @@
+name: releaselab
+services:
+  runner:
+    image: gitlab/gitlab-runner:alpine-v18.5.0
+    restart: unless-stopped
+    volumes:
+      - runner-config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./runner/config.template.toml:/templates/config.toml:ro
+    networks: [ci]
+  vault:
+    image: hashicorp/vault:1.21.0
+    command: server -dev -dev-listen-address=0.0.0.0:8200
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID:?Run scripts/setup-local.sh}
+      VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN_ID:?Run scripts/setup-local.sh}
+      VAULT_ADDR: http://127.0.0.1:8200
+    cap_add: [IPC_LOCK]
+    ports: ['127.0.0.1:8200:8200']
+    volumes: ['./vault:/bootstrap:ro']
+    networks: [ci]
+    healthcheck:
+      test: ['CMD', 'vault', 'status']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+networks:
+  ci:
+    name: releaselab-ci
+volumes:
+  runner-config:

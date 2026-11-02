@@ -1,0 +1,111 @@
+stages: [build, test, build_image, push, update_gitops]
+
+default:
+  tags: [releaselab]
+  interruptible: true
+
+variables:
+  VAULT_ADDR: http://vault:8200
+  VAULT_AUTH_MODE: jwt
+  VAULT_AUTH_ROLE: releaselab-ci
+  VAULT_AUDIENCE: https://releaselab.local/vault
+  DOCKER_HOST: unix:///var/run/docker.sock
+  GIT_DEPTH: "0"
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes: &inputs
+        - app/**/*
+        - scripts/**/*
+        - Dockerfile
+        - .dockerignore
+        - .gitlab-ci.yml
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+      changes: *inputs
+    - when: never
+
+build:
+  stage: build
+  image: node:24-bookworm-slim
+  rules: &verify_rules
+    - when: on_success
+  script:
+    - cd app
+    - npm ci --no-audit --no-fund
+    - cd .. && node scripts/validate.mjs && cd app
+    - npm run build
+  artifacts:
+    paths: [app/dist/]
+    expire_in: 1 day
+
+test:
+  stage: test
+  image: node:24-bookworm-slim
+  rules: *verify_rules
+  needs:
+    - job: build
+      artifacts: true
+  id_tokens:
+    VAULT_ID_TOKEN:
+      aud: $VAULT_AUDIENCE
+  script:
+    - cd app && npm ci --no-audit --no-fund && cd ..
+    - node scripts/vault-test.mjs
+  artifacts:
+    when: always
+    paths: [app/reports/]
+    reports:
+      junit: app/reports/junit.xml
+    expire_in: 1 week
+
+build_image:
+  stage: build_image
+  image: docker:28-cli
+  rules: *verify_rules
+  needs:
+    - job: build
+      artifacts: true
+    - job: test
+      artifacts: false
+  script:
+    - apk add --no-cache jq
+    - APP_VERSION=$(jq -er '.version' app/package.json)
+    - test -n "$APP_VERSION"
+    - docker build --pull --build-arg APP_VERSION="$APP_VERSION" --build-arg COMMIT_SHA="$CI_COMMIT_SHA" -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" .
+    - docker save --output image.tar "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+  artifacts:
+    paths: [image.tar]
+    expire_in: 1 day
+
+push:
+  stage: push
+  image: docker:28-cli
+  needs:
+    - job: build_image
+      artifacts: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+  script:
+    - export DOCKER_CONFIG=$(mktemp -d)
+    - trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+    - docker load --input image.tar
+    - printf '%s' "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+
+update_gitops:
+  stage: update_gitops
+  image: alpine:3.22
+  interruptible: false
+  resource_group: releaselab-dev
+  needs:
+    - job: push
+      artifacts: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"'
+  before_script:
+    - apk add --no-cache bash git kustomize
+  script:
+    - bash scripts/update-gitops.sh

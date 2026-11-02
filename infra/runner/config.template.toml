@@ -1,0 +1,9 @@
+concurrent = 2
+check_interval = 3
+
+[[runners]]
+  [runners.docker]
+    image = "node:24-bookworm-slim"
+    privileged = false
+    network_mode = "releaselab-ci"
+    volumes = ["/var/run/docker.sock:/var/run/docker.sock", "/cache"]

@@ -1,0 +1,6 @@
+**
+!app/
+!app/package.json
+!app/package-lock.json
+!app/dist/
+!app/dist/**
