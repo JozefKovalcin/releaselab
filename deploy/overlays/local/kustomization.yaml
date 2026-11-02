@@ -5,7 +5,7 @@ resources: [../../base]
 images:
   - name: release-demo
     newName: releaselab
-    newTag: 081f87339089c959c696af495f0c1b502251386a
+    newTag: a2222d74a9910cb822b0aa0844dd98e1a0d71a23
 patches:
   - target:
       kind: Deployment
